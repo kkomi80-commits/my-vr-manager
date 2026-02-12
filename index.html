@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VR 리밸런싱 매니저</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { margin: 0; padding: 0; }
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #1e293b; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+  </style>
+</head>
+<body class="bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 text-white min-h-screen">
+  <div id="app" class="max-w-6xl mx-auto p-4"></div>
+
+  <script>
+    // [데이터 모델] 초기값에 G값 추가
+    function loadData() {
+      const saved = localStorage.getItem('vr-portfolios');
+      if (saved) return JSON.parse(saved);
+      return [{
+        id: Date.now(),
+        ticker: 'TQQQ',
+        totalCapital: 10000,
+        currentPrice: 65.5,
+        gValue: 100, // 추가된 G값 (회차별 목표 가치 증가분)
+        targetReturn: 10,
+        purchases: []
+      }];
+    }
+
+    function saveData(data) {
+      localStorage.setItem('vr-portfolios', JSON.stringify(data));
+    }
+
+    let portfolios = loadData();
+    let selectedIndex = 0;
+    let priceLoading = false;
+
+    // [계산 함수] G값 기반 밸류 리밸런싱 로직
+    function getStats(portfolio) {
+      const totalShares = portfolio.purchases.reduce((sum, p) => sum + p.shares, 0);
+      const totalCost = portfolio.purchases.reduce((sum, p) => sum + (p.price * p.shares), 0);
+      const avgPrice = totalShares > 0 ? totalCost / totalShares : 0;
+      const currentValue = totalShares * portfolio.currentPrice;
+      const returnRate = totalCost > 0 ? ((currentValue - totalCost) / totalCost) * 100 : 0;
+      
+      // 적립식 VR 핵심: 목표 밸류 = (G값 * 매수회차)
+      const currentTurn = portfolio.purchases.length;
+      const targetValue = portfolio.gValue * currentTurn;
+      
+      return { totalShares, totalCost, avgPrice, currentValue, returnRate, targetValue, currentTurn };
+    }
+
+    // [UI 렌더링]
+    function render() {
+      const p = portfolios[selectedIndex];
+      const stats = getStats(p);
+
+      document.getElementById('app').innerHTML = `
+        <header class="mb-8 pt-4 flex justify-between items-center flex-wrap gap-4">
+          <div>
+            <h1 class="text-3xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">VR 매니저</h1>
+            <p class="text-slate-400 text-sm">라오어 밸류 리밸런싱 도구</p>
+          </div>
+          <div class="flex gap-2">
+            <button onclick="exportData()" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded text-xs">💾 백업</button>
+            <button onclick="importData()" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded text-xs">📂 복원</button>
+            <button onclick="addPortfolio()" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-sm font-bold">➕ 종목 추가</button>
+          </div>
+        </header>
+
+        <div class="flex gap-2 mb-6 overflow-x-auto">
+          ${portfolios.map((item, i) => `
+            <button onclick="selectedIndex=${i};render()" class="px-4 py-2 rounded-t-lg transition-colors ${i === selectedIndex ? 'bg-slate-800 text-blue-400 border-b-2 border-blue-400' : 'bg-slate-900/50 text-slate-500'}">
+              ${item.ticker}
+            </button>
+          `).join('')}
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div class="lg:col-span-2 space-y-6">
+            <div class="bg-slate-800/50 p-6 rounded-xl border border-slate-700">
+              <div class="flex justify-between items-start mb-6">
+                <div>
+                  <h2 class="text-2xl font-bold">${p.ticker} 대시보드</h2>
+                  <p class="text-slate-400 text-sm">현재 ${stats.currentTurn}회차 운용 중</p>
+                </div>
+                <div class="text-right">
+                  <p class="text-xs text-slate-500 mb-1">현재가 업데이트</p>
+                  <div class="flex gap-2">
+                    <input type="number" step="0.01" value="${p.currentPrice}" onchange="updatePrice(this.value)" class="w-24 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm">
+                    <button onclick="fetchPrice('${p.ticker}')" class="bg-green-600 px-3 py-1 rounded text-xs font-bold ${priceLoading ? 'animate-pulse' : ''}">실시간조회</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div class="bg-slate-900 p-4 rounded-lg">
+                  <p class="text-slate-500 text-xs mb-1">G값 (회차별 증가분)</p>
+                  <input type="number" value="${p.gValue}" onchange="updateGValue(this.value)" class="w-full bg-transparent text-xl font-bold text-amber-400 focus:outline-none">
+                </div>
+                <div class="bg-slate-900 p-4 rounded-lg">
+                  <p class="text-slate-500 text-xs mb-1">목표 밸류(TV)</p>
+                  <p class="text-xl font-bold text-cyan-400">$${stats.targetValue.toLocaleString()}</p>
+                </div>
+                <div class="bg-slate-900 p-4 rounded-lg">
+                  <p class="text-slate-500 text-xs mb-1">현재 밸류(CV)</p>
+                  <p class="text-xl font-bold text-blue-400">$${stats.currentValue.toLocaleString(undefined, {maximumFractionDigits:0})}</p>
+                </div>
+                <div class="bg-slate-900 p-4 rounded-lg">
+                  <p class="text-slate-500 text-xs mb-1">수익률</p>
+                  <p class="text-xl font-bold ${stats.returnRate >= 0 ? 'text-green-400' : 'text-red-400'}">${stats.returnRate.toFixed(2)}%</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="bg-blue-900/20 p-6 rounded-xl border border-blue-800/50">
+              <h3 class="text-lg font-bold mb-4 text-blue-300">💡 다음 회차 행동 가이드</h3>
+              ${stats.currentValue > stats.targetValue 
+                ? `<p class="text-amber-300 font-semibold">현재 밸류가 목표보다 높습니다. 원칙에 따라 <span class="text-xl text-amber-500 underline">매도(리밸런싱)</span>를 고려하세요.</p>`
+                : `<p class="text-cyan-300 font-semibold">현재 밸류가 목표보다 낮습니다. <span class="text-xl text-cyan-500 underline">매수</span>를 통해 목표 밸류를 채우세요.</p>`
+              }
+            </div>
+          </div>
+
+          <div class="bg-slate-800/50 p-6 rounded-xl border border-slate-700">
+            <h3 class="text-lg font-bold mb-4">매수/매도 기록</h3>
+            <div class="space-y-3">
+              <input type="number" id="buyPrice" placeholder="단가" value="${p.currentPrice}" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2">
+              <input type="number" id="buyShares" placeholder="수량 (매도는 마이너스)" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2">
+              <button onclick="addRecord()" class="w-full bg-blue-600 py-3 rounded-lg font-bold hover:bg-blue-500 transition-colors">기록 저장</button>
+            </div>
+            
+            <div class="mt-6 border-t border-slate-700 pt-4">
+              <h4 class="text-sm font-bold text-slate-400 mb-3">최근 기록</h4>
+              <div class="space-y-2 max-h-60 overflow-y-auto pr-2 text-xs">
+                ${p.purchases.slice().reverse().map((r, i) => `
+                  <div class="flex justify-between bg-slate-900 p-2 rounded">
+                    <span>${new Date(r.date).toLocaleDateString()}</span>
+                    <span class="${r.shares >= 0 ? 'text-cyan-400' : 'text-red-400'}">${r.shares}주</span>
+                    <span class="text-slate-300">$${r.price}</span>
+                    <button onclick="deleteRecord(${p.purchases.length - 1 - i})" class="text-slate-600">✕</button>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // [제어 로직]
+    async function fetchPrice(ticker) {
+      priceLoading = true; render();
+      try {
+        const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1m&range=1d`);
+        const data = await res.json();
+        const price = data.chart.result[0].meta.regularMarketPrice;
+        portfolios[selectedIndex].currentPrice = price;
+        saveData(portfolios);
+      } catch (e) { alert('가격 조회 실패'); }
+      priceLoading = false; render();
+    }
+
+    function updateGValue(val) {
+      portfolios[selectedIndex].gValue = parseFloat(val);
+      saveData(portfolios);
+      render();
+    }
+
+    function updatePrice(val) {
+      portfolios[selectedIndex].currentPrice = parseFloat(val);
+      saveData(portfolios);
+      render();
+    }
+
+    function addRecord() {
+      const price = parseFloat(document.getElementById('buyPrice').value);
+      const shares = parseFloat(document.getElementById('buyShares').value);
+      if(!price || !shares) return;
+      
+      portfolios[selectedIndex].purchases.push({
+        date: new Date().toISOString(),
+        price,
+        shares
+      });
+      saveData(portfolios);
+      render();
+    }
+
+    function deleteRecord(idx) {
+      if(confirm('삭제하시겠습니까?')) {
+        portfolios[selectedIndex].purchases.splice(idx, 1);
+        saveData(portfolios);
+        render();
+      }
+    }
+
+    function addPortfolio() {
+      const ticker = prompt('티커 입력(예: SOXL):');
+      if(!ticker) return;
+      portfolios.push({
+        id: Date.now(),
+        ticker: ticker.toUpperCase(),
+        gValue: 100,
+        currentPrice: 0,
+        purchases: []
+      });
+      selectedIndex = portfolios.length - 1;
+      saveData(portfolios);
+      render();
+    }
+
+    function exportData() {
+      const blob = new Blob([JSON.stringify(portfolios)], {type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'vr-backup.json'; a.click();
+    }
+
+    function importData() {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.onchange = (e) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          portfolios = JSON.parse(ev.target.result);
+          saveData(portfolios); render();
+        };
+        reader.readAsText(e.target.files[0]);
+      };
+      input.click();
+    }
+
+    render();
+  </script>
+</body>
+</html>
