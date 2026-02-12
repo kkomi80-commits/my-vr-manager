@@ -1,153 +1,120 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>VR 리밸런싱 매니저</title>
-  <link rel="manifest" href="manifest.json">
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js');
-    }
-  </script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VR 실시간 계산기</title>
+    <link rel="manifest" href="manifest.json">
+    <style>
+        body { font-family: -apple-system, sans-serif; padding: 20px; background: #f0f2f5; color: #1c1e21; }
+        .card { background: white; padding: 24px; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); max-width: 400px; margin: auto; }
+        h2 { margin-top: 0; font-size: 1.5rem; text-align: center; }
+        .input-group { margin-bottom: 16px; }
+        label { display: block; margin-bottom: 6px; font-size: 0.9rem; color: #606770; }
+        input { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem; box-sizing: border-box; }
+        .status { font-size: 0.8rem; text-align: right; margin-bottom: 10px; color: #3498db; }
+        button { width: 100%; padding: 14px; background: #1877f2; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 1rem; font-weight: bold; }
+        #result { margin-top: 20px; padding: 16px; border-radius: 8px; display: none; line-height: 1.6; }
+        .buy { background: #ffebee; border-left: 5px solid #ff5252; }
+        .sell { background: #e8f5e9; border-left: 5px solid #4caf50; }
+        .symbol-tag { background: #eee; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
+    </style>
 </head>
-<body class="bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 text-white min-h-screen">
-  <div id="app" class="max-w-6xl mx-auto p-4"></div>
-
-  <script>
-    function loadData() {
-      const saved = localStorage.getItem('vr-portfolios-v2');
-      if (saved) return JSON.parse(saved);
-      return [{
-        id: Date.now(),
-        ticker: 'TQQQ',
-        initialValue: 0,
-        gValue: 100,
-        currentPrice: 0,
-        purchases: []
-      }];
-    }
-
-    function saveData(data) {
-      localStorage.setItem('vr-portfolios-v2', JSON.stringify(data));
-    }
-
-    let portfolios = loadData();
-    let selectedIndex = 0;
-
-    function getStats(p) {
-      const totalShares = p.purchases.reduce((sum, r) => sum + r.shares, 0);
-      const currentValue = totalShares * p.currentPrice;
-      const currentCycle = p.purchases.length; 
-      const targetValue = p.initialValue + (p.gValue * currentCycle);
-      const diff = targetValue - currentValue;
-      return { totalShares, currentValue, targetValue, currentCycle, diff };
-    }
-
-    function render() {
-      const p = portfolios[selectedIndex];
-      const stats = getStats(p);
-
-      document.getElementById('app').innerHTML = `
-        <header class="mb-8 pt-4 flex justify-between items-center">
-          <div>
-            <h1 class="text-3xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">VR 매니저</h1>
-            <p class="text-slate-400 text-sm">2주 주기 리밸런싱</p>
-          </div>
-          <div class="flex gap-2">
-            <button onclick="exportData()" class="px-2 py-1 bg-slate-700 rounded text-xs">백업</button>
-            <button onclick="importData()" class="px-2 py-1 bg-slate-700 rounded text-xs">복원</button>
-            <button onclick="addPortfolio()" class="px-3 py-1 bg-blue-600 rounded text-xs font-bold">+ 추가</button>
-          </div>
-        </header>
-
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div class="lg:col-span-2 space-y-6">
-            <div class="bg-slate-800/50 p-6 rounded-xl border border-slate-700">
-              <div class="flex justify-between items-center mb-6">
-                <h2 class="text-2xl font-bold">${p.ticker}</h2>
-                <div class="flex gap-2 text-sm">
-                   <input type="number" value="${p.currentPrice}" onchange="updatePrice(this.value)" class="w-20 bg-slate-900 border border-slate-700 rounded px-2">
-                   <button onclick="fetchPrice('${p.ticker}')" class="bg-green-600 px-3 py-1 rounded text-xs">시세조회</button>
-                </div>
-              </div>
-
-              <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div class="bg-slate-900 p-4 rounded-lg">
-                  <p class="text-slate-500 text-xs mb-1">시작 밸류($V_0$)</p>
-                  <input type="number" value="${p.initialValue}" onchange="updateInitialValue(this.value)" class="w-full bg-transparent text-xl font-bold focus:outline-none">
-                </div>
-                <div class="bg-slate-900 p-4 rounded-lg">
-                  <p class="text-slate-500 text-xs mb-1">G값 (2주 증가분)</p>
-                  <input type="number" value="${p.gValue}" onchange="updateGValue(this.value)" class="w-full bg-transparent text-xl font-bold text-amber-400 focus:outline-none">
-                </div>
-                <div class="bg-slate-900 p-4 rounded-lg text-center">
-                  <p class="text-slate-500 text-xs mb-1">현재 사이클</p>
-                  <p class="text-xl font-bold">${stats.currentCycle}회 완료</p>
-                </div>
-              </div>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div class="bg-slate-800/50 p-6 rounded-xl border border-slate-700 text-center">
-                <p class="text-slate-500 text-sm mb-1">목표 밸류(TV)</p>
-                <p class="text-3xl font-black text-cyan-400">$ ${stats.targetValue.toLocaleString()}</p>
-              </div>
-              <div class="bg-slate-800/50 p-6 rounded-xl border border-slate-700 text-center">
-                <p class="text-slate-500 text-sm mb-1">현재 밸류(CV)</p>
-                <p class="text-3xl font-black text-blue-400">$ ${stats.currentValue.toLocaleString(undefined, {maximumFractionDigits:0})}</p>
-              </div>
-            </div>
-
-            <div class="bg-blue-900/30 p-6 rounded-xl border border-blue-700">
-              <h3 class="font-bold text-blue-300 mb-2 font-sm">📢 다음 행동 지침</h3>
-              <p class="text-lg">
-                이번 주기(2주)에 <span class="font-bold ${stats.diff > 0 ? 'text-cyan-400' : 'text-red-400'}">
-                $${Math.abs(stats.diff).toLocaleString(undefined, {maximumFractionDigits:0})}</span>만큼 
-                ${stats.diff > 0 ? '<span class="underline">매수</span>' : '<span class="underline">매도</span>'}하세요.
-              </p>
-            </div>
-          </div>
-
-          <div class="bg-slate-800/50 p-6 rounded-xl border border-slate-700">
-            <h3 class="font-bold mb-4">사이클 기록 확정</h3>
-            <div class="space-y-4">
-              <input type="number" id="buyPrice" value="${p.currentPrice}" placeholder="단가($)" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2">
-              <input type="number" id="buyShares" placeholder="수량(매도 시 마이너스)" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2">
-              <button onclick="addRecord()" class="w-full bg-blue-600 py-3 rounded-lg font-bold">기록 추가 (1사이클 증가)</button>
-              <div class="pt-4 border-t border-slate-700 text-sm">
-                <p class="flex justify-between text-slate-400"><span>보유 수량:</span> <span class="text-white">${stats.totalShares.toFixed(2)} 주</span></p>
-              </div>
-            </div>
-          </div>
+<body>
+    <div class="card">
+        <h2>VR 실시간 리밸런싱</h2>
+        
+        <div class="input-group">
+            <label>API Key (Finnhub)</label>
+            <input type="text" id="apiKey" placeholder="API 키를 입력하세요">
         </div>
-      `;
-    }
 
-    function updateInitialValue(v) { portfolios[selectedIndex].initialValue = parseFloat(v); saveData(portfolios); render(); }
-    function updateGValue(v) { portfolios[selectedIndex].gValue = parseFloat(v); saveData(portfolios); render(); }
-    function updatePrice(v) { portfolios[selectedIndex].currentPrice = parseFloat(v); saveData(portfolios); render(); }
-    function addRecord() {
-      const p = parseFloat(document.getElementById('buyPrice').value);
-      const s = parseFloat(document.getElementById('buyShares').value);
-      if(isNaN(p) || isNaN(s)) return;
-      portfolios[selectedIndex].purchases.push({ date: new Date().toISOString(), price: p, shares: s });
-      saveData(portfolios); render();
-    }
-    async function fetchPrice(ticker) {
-      try {
-        const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1m&range=1d`);
-        const data = await res.json();
-        portfolios[selectedIndex].currentPrice = data.chart.result[0].meta.regularMarketPrice;
-        saveData(portfolios); render();
-      } catch (e) { alert('조회 실패'); }
-    }
-    function exportData() { const blob = new Blob([JSON.stringify(portfolios)], {type:'application/json'}); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'vr-data.json'; a.click(); }
-    function importData() { const i = document.createElement('input'); i.type = 'file'; i.onchange = (e) => { const r = new FileReader(); r.onload = (ev) => { portfolios = JSON.parse(ev.target.result); saveData(portfolios); render(); }; r.readAsText(e.target.files[0]); }; i.click(); }
-    function addPortfolio() { const t = prompt('티커?'); if(t) { portfolios.push({ id: Date.now(), ticker: t.toUpperCase(), initialValue: 0, gValue: 100, currentPrice: 0, purchases: [] }); selectedIndex = portfolios.length - 1; saveData(portfolios); render(); } }
+        <div class="input-group">
+            <label>티커 (예: TQQQ)</label>
+            <input type="text" id="symbol" value="TQQQ" style="text-transform:uppercase">
+        </div>
 
-    render();
-  </script>
+        <div id="priceStatus" class="status">실시간 주가 대기 중...</div>
+
+        <div class="input-group">
+            <label>현재 보유 수량 (개)</label>
+            <input type="number" id="holdings" placeholder="예: 150">
+        </div>
+
+        <div class="input-group">
+            <label>목표 밸류 (V, $)</label>
+            <input type="number" id="targetValue" placeholder="예: 15000">
+        </div>
+
+        <button onclick="startTracking()">1분마다 자동 계산 시작</button>
+
+        <div id="result"></div>
+    </div>
+
+    <script>
+        let timer = null;
+        let currentPrice = 0;
+
+        async function fetchPrice() {
+            const symbol = document.getElementById('symbol').value.toUpperCase();
+            const apiKey = document.getElementById('apiKey').value;
+            
+            if(!apiKey) {
+                alert("API Key가 필요합니다.");
+                return;
+            }
+
+            try {
+                const response = await fetch(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${apiKey}`);
+                const data = await response.json();
+                
+                if(data.c) {
+                    currentPrice = data.c;
+                    document.getElementById('priceStatus').innerText = `현재 ${symbol} 주가: $${currentPrice} (갱신됨)`;
+                    calculateVR();
+                } else {
+                    document.getElementById('priceStatus').innerText = "주가를 가져오지 못했습니다. (티커 확인)";
+                }
+            } catch (error) {
+                console.error("API 호출 오류:", error);
+            }
+        }
+
+        function calculateVR() {
+            const stocks = parseFloat(document.getElementById('holdings').value);
+            const target = parseFloat(document.getElementById('targetValue').value);
+            const resultDiv = document.getElementById('result');
+
+            if(!currentPrice || !stocks || !target) return;
+
+            const currentEval = currentPrice * stocks;
+            const diff = target - currentEval; // (V - 현재평가금)
+            
+            resultDiv.style.display = "block";
+            
+            if (diff > 0) {
+                resultDiv.className = "buy";
+                resultDiv.innerHTML = `<strong>[매수 가이드]</strong><br>현재 평가금: $${currentEval.toFixed(2)}<br>부족분: $${diff.toFixed(2)}만큼 LOC 매수 필요`;
+            } else {
+                resultDiv.className = "sell";
+                resultDiv.innerHTML = `<strong>[매도 가이드]</strong><br>현재 평가금: $${currentEval.toFixed(2)}<br>초과분: $${Math.abs(diff).toFixed(2)}만큼 LOC 매도 필요`;
+            }
+        }
+
+        function startTracking() {
+            if(timer) clearInterval(timer);
+            
+            // 즉시 한 번 실행
+            fetchPrice();
+            
+            // 1분(60000ms)마다 반복 실행
+            timer = setInterval(fetchPrice, 60000);
+            alert("자동 갱신이 시작되었습니다. (1분 간격)");
+        }
+
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js');
+        }
+    </script>
 </body>
 </html>
