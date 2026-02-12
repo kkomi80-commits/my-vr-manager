@@ -1,0 +1,15 @@
+{
+  "short_name": "VR매니저",
+  "name": "라오어 VR 리밸런싱 매니저",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2452/2452187.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "start_url": "./index.html",
+  "display": "standalone",
+  "theme_color": "#0f172a",
+  "background_color": "#0f172a"
+}
